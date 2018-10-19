@@ -1131,7 +1131,7 @@ MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WO
         buffer[size] = 0;
     }
 #if defined(UNICODE)
-    wcsncpy(buffer, data->NameString, size);
+    wcsncpy_s(buffer, size, data->NameString, _TRUNCATE);
 #else
     wcstombs(buffer, data->NameString, size);
 #endif
