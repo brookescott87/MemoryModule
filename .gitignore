@@ -6,3 +6,7 @@ tests/*.res
 
 tests/SampleExports.cpp
 tests/SampleExports.h
+
+x64/
+Debug/
+*.vcxproj.user
