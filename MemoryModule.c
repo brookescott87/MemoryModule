@@ -77,7 +77,7 @@ typedef struct POINTER_LIST {
 } POINTER_LIST;
 #endif
 
-typedef struct {
+typedef struct MEMORYMODULE {
     PIMAGE_NT_HEADERS headers;
     unsigned char *codeBase;
     HCUSTOMMODULE *modules;
@@ -99,7 +99,7 @@ typedef struct {
 #endif
 } MEMORYMODULE, *PMEMORYMODULE;
 
-typedef struct {
+typedef struct SECTIONFINALIZEDATA {
     LPVOID address;
     LPVOID alignedAddress;
     SIZE_T size;
@@ -536,12 +536,12 @@ void MemoryDefaultFreeLibrary(HCUSTOMMODULE module, void *userdata)
     FreeLibrary((HMODULE) module);
 }
 
-HMEMORYMODULE MemoryLoadLibrary(const void *data, size_t size)
+HMEMORYMODULE MemoryLoadLibrary(const void *data, size_t size, LPVOID imageBase)
 {
-    return MemoryLoadLibraryEx(data, size, MemoryDefaultAlloc, MemoryDefaultFree, MemoryDefaultLoadLibrary, MemoryDefaultGetProcAddress, MemoryDefaultFreeLibrary, NULL);
+    return MemoryLoadLibraryEx(data, size, imageBase, MemoryDefaultAlloc, MemoryDefaultFree, MemoryDefaultLoadLibrary, MemoryDefaultGetProcAddress, MemoryDefaultFreeLibrary, NULL);
 }
 
-HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size,
+HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size, LPVOID imageBase,
     CustomAllocFunc allocMemory,
     CustomFreeFunc freeMemory,
     CustomLoadLibraryFunc loadLibrary,
@@ -616,10 +616,13 @@ HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size,
         return NULL;
     }
 
+    if (!imageBase)
+        imageBase = (LPVOID)old_header->OptionalHeader.ImageBase;
+
     // reserve memory for image of library
     // XXX: is it correct to commit the complete memory region at once?
     //      calling DllEntry raises an exception if we don't...
-    code = (unsigned char *)allocMemory((LPVOID)(old_header->OptionalHeader.ImageBase),
+    code = (unsigned char *)allocMemory(imageBase,
         alignedImageSize,
         MEM_RESERVE | MEM_COMMIT,
         PAGE_READWRITE,
@@ -963,8 +966,8 @@ static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(
         // using a pre-allocated array.
         wchar_t _searchKeySpace[MAX_LOCAL_KEY_LENGTH+1];
         LPWSTR _searchKey;
+        size_t _searchKeySize = (searchKeyLen + 1) * sizeof(wchar_t);
         if (searchKeyLen > MAX_LOCAL_KEY_LENGTH) {
-            size_t _searchKeySize = (searchKeyLen + 1) * sizeof(wchar_t);
             _searchKey = (LPWSTR) malloc(_searchKeySize);
             if (_searchKey == NULL) {
                 SetLastError(ERROR_OUTOFMEMORY);
@@ -974,8 +977,8 @@ static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(
             _searchKey = &_searchKeySpace[0];
         }
 
-        mbstowcs(_searchKey, key, searchKeyLen);
-        _searchKey[searchKeyLen] = 0;
+        if (mbstowcs_s(&_searchKeySize, _searchKey, searchKeyLen + 1, key, searchKeyLen))
+            return NULL;
         searchKey = _searchKey;
 #endif
         start = 0;
@@ -1102,7 +1105,7 @@ MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WO
 {
     HMEMORYRSRC resource;
     PIMAGE_RESOURCE_DIR_STRING_U data;
-    DWORD size;
+    size_t size;
     if (maxsize == 0) {
         return 0;
     }
@@ -1124,18 +1127,82 @@ MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WO
         return 0;
     }
 
-    size = data->Length;
-    if (size >= (DWORD) maxsize) {
-        size = maxsize;
+    size = (size_t)data->Length;
+    if (size >= (size_t) maxsize) {
+        size = (size_t)maxsize;
     } else {
         buffer[size] = 0;
     }
 #if defined(UNICODE)
-    wcsncpy(buffer, data->NameString, size);
+    wcsncpy_s(buffer, size, data->NameString, _TRUNCATE);
 #else
-    wcstombs(buffer, data->NameString, size);
+    wcstombs_s(&size, buffer, maxsize, data->NameString, size);
 #endif
-    return size;
+    return (int)size;
+}
+
+static LPVOID ReadLibraryFile(LPCSTR lpszFileName, PDWORD pdwSize)
+{
+    DWORD dwBytesRead = 0;
+    BOOL bResult = FALSE;
+
+    HANDLE hFile = CreateFileA(lpszFileName,
+        GENERIC_READ,          // open for reading
+        FILE_SHARE_READ,       // share for reading
+        NULL,                  // default security
+        OPEN_EXISTING,         // existing file only
+        FILE_ATTRIBUTE_NORMAL, // normal file
+        NULL                   // no attr. template
+    );
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD dwSize = GetFileSize(hFile, NULL);
+        void *mem = dwSize ?
+            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MEMORYMODULE)) : NULL;
+        BOOL bResult = mem && ReadFile(hFile, mem, dwSize, &dwBytesRead, NULL);
+        CloseHandle(hFile);
+
+        if (mem) {
+            if (bResult) {
+                if (dwBytesRead == dwSize) {
+                    if (pdwSize)
+                        *pdwSize = dwSize;
+                    return mem;
+                }
+            }
+
+            free(mem);
+        }
+    }
+
+    return NULL;
+}
+
+HMEMORYMODULE MemoryLoadLibraryFile(LPCSTR lpszFileName, LPVOID imageBase)
+{
+    return MemoryLoadLibraryFileEx(lpszFileName, imageBase, MemoryDefaultAlloc, MemoryDefaultFree, MemoryDefaultLoadLibrary, MemoryDefaultGetProcAddress, MemoryDefaultFreeLibrary, NULL);
+}
+
+HMEMORYMODULE MemoryLoadLibraryFileEx(LPCSTR lpszFileName,
+    LPVOID imageBase,
+    CustomAllocFunc allocMemory,
+    CustomFreeFunc freeMemory,
+    CustomLoadLibraryFunc loadLibrary,
+    CustomGetProcAddressFunc getProcAddress,
+    CustomFreeLibraryFunc freeLibrary,
+    void *userdata)
+{
+    DWORD dwSize = 0;
+    LPVOID lpData = ReadLibraryFile(lpszFileName, &dwSize);
+    HMEMORYMODULE hModule = NULL;
+
+    if (lpData) {
+        hModule = MemoryLoadLibraryEx(lpData, (size_t)dwSize, imageBase,
+            allocMemory, freeMemory, loadLibrary, getProcAddress, freeLibrary,
+            userdata);
+        HeapFree(GetProcessHeap(), 0, lpData);
+    }
+    return hModule;
 }
 
 #ifdef TESTSUITE

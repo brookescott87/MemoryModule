@@ -51,7 +51,7 @@ typedef void (*CustomFreeLibraryFunc)(HCUSTOMMODULE, void *);
  * All dependencies are resolved using default LoadLibrary/GetProcAddress
  * calls through the Windows API.
  */
-HMEMORYMODULE MemoryLoadLibrary(const void *, size_t);
+HMEMORYMODULE MemoryLoadLibrary(const void *, size_t, LPVOID);
 
 /**
  * Load EXE/DLL from memory location with the given size using custom dependency
@@ -59,7 +59,7 @@ HMEMORYMODULE MemoryLoadLibrary(const void *, size_t);
  *
  * Dependencies will be resolved using passed callback methods.
  */
-HMEMORYMODULE MemoryLoadLibraryEx(const void *, size_t,
+HMEMORYMODULE MemoryLoadLibraryEx(const void *, size_t, LPVOID,
     CustomAllocFunc,
     CustomFreeFunc,
     CustomLoadLibraryFunc,
@@ -160,6 +160,16 @@ FARPROC MemoryDefaultGetProcAddress(HCUSTOMMODULE, LPCSTR, void *);
  * This is the default as used by MemoryLoadLibrary.
  */
 void MemoryDefaultFreeLibrary(HCUSTOMMODULE, void *);
+
+HMEMORYMODULE MemoryLoadLibraryFile(LPCSTR, LPVOID);
+
+HMEMORYMODULE MemoryLoadLibraryFileEx(LPCSTR, LPVOID,
+    CustomAllocFunc,
+    CustomFreeFunc,
+    CustomLoadLibraryFunc,
+    CustomGetProcAddressFunc,
+    CustomFreeLibraryFunc,
+    void *);
 
 #ifdef __cplusplus
 }
