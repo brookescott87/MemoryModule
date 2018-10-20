@@ -13,7 +13,9 @@
 
 typedef int (*addNumberProc)(int, int);
 
+#ifndef DLL_FILE
 #define DLL_FILE TEXT("..\\SampleDLL\\SampleDLL.dll")
+#endif
 
 void LoadFromFile(void)
 {
