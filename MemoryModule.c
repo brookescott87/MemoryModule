@@ -963,8 +963,8 @@ static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(
         // using a pre-allocated array.
         wchar_t _searchKeySpace[MAX_LOCAL_KEY_LENGTH+1];
         LPWSTR _searchKey;
+        size_t _searchKeySize = (searchKeyLen + 1) * sizeof(wchar_t);
         if (searchKeyLen > MAX_LOCAL_KEY_LENGTH) {
-            size_t _searchKeySize = (searchKeyLen + 1) * sizeof(wchar_t);
             _searchKey = (LPWSTR) malloc(_searchKeySize);
             if (_searchKey == NULL) {
                 SetLastError(ERROR_OUTOFMEMORY);
@@ -974,8 +974,8 @@ static PIMAGE_RESOURCE_DIRECTORY_ENTRY _MemorySearchResourceEntry(
             _searchKey = &_searchKeySpace[0];
         }
 
-        mbstowcs(_searchKey, key, searchKeyLen);
-        _searchKey[searchKeyLen] = 0;
+        if (mbstowcs_s(&_searchKeySize, _searchKey, searchKeyLen + 1, key, searchKeyLen))
+            return NULL;
         searchKey = _searchKey;
 #endif
         start = 0;
@@ -1102,7 +1102,7 @@ MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WO
 {
     HMEMORYRSRC resource;
     PIMAGE_RESOURCE_DIR_STRING_U data;
-    DWORD size;
+    size_t size;
     if (maxsize == 0) {
         return 0;
     }
@@ -1124,18 +1124,18 @@ MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WO
         return 0;
     }
 
-    size = data->Length;
-    if (size >= (DWORD) maxsize) {
-        size = maxsize;
+    size = (size_t)data->Length;
+    if (size >= (size_t) maxsize) {
+        size = (size_t)maxsize;
     } else {
         buffer[size] = 0;
     }
 #if defined(UNICODE)
     wcsncpy_s(buffer, size, data->NameString, _TRUNCATE);
 #else
-    wcstombs(buffer, data->NameString, size);
+    wcstombs_s(&size, buffer, maxsize, data->NameString, size);
 #endif
-    return size;
+    return (int)size;
 }
 
 #ifdef TESTSUITE
