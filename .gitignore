@@ -10,3 +10,5 @@ tests/SampleExports.h
 x64/
 Debug/
 *.vcxproj.user
+.vs/
+CMakeSettings.json
