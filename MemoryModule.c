@@ -1141,6 +1141,70 @@ MemoryLoadStringEx(HMEMORYMODULE module, UINT id, LPTSTR buffer, int maxsize, WO
     return (int)size;
 }
 
+static LPVOID ReadLibraryFile(LPCSTR lpszFileName, PDWORD pdwSize)
+{
+    DWORD dwBytesRead = 0;
+    BOOL bResult = FALSE;
+
+    HANDLE hFile = CreateFileA(lpszFileName,
+        GENERIC_READ,          // open for reading
+        FILE_SHARE_READ,       // share for reading
+        NULL,                  // default security
+        OPEN_EXISTING,         // existing file only
+        FILE_ATTRIBUTE_NORMAL, // normal file
+        NULL                   // no attr. template
+    );
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD dwSize = GetFileSize(hFile, NULL);
+        void *mem = dwSize ?
+            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MEMORYMODULE)) : NULL;
+        BOOL bResult = mem && ReadFile(hFile, mem, dwSize, &dwBytesRead, NULL);
+        CloseHandle(hFile);
+
+        if (mem) {
+            if (bResult) {
+                if (dwBytesRead == dwSize) {
+                    if (pdwSize)
+                        *pdwSize = dwSize;
+                    return mem;
+                }
+            }
+
+            free(mem);
+        }
+    }
+
+    return NULL;
+}
+
+HMEMORYMODULE MemoryLoadLibraryFile(LPCSTR lpszFileName, LPVOID imageBase)
+{
+    return MemoryLoadLibraryFileEx(lpszFileName, imageBase, MemoryDefaultAlloc, MemoryDefaultFree, MemoryDefaultLoadLibrary, MemoryDefaultGetProcAddress, MemoryDefaultFreeLibrary, NULL);
+}
+
+HMEMORYMODULE MemoryLoadLibraryFileEx(LPCSTR lpszFileName,
+    LPVOID imageBase,
+    CustomAllocFunc allocMemory,
+    CustomFreeFunc freeMemory,
+    CustomLoadLibraryFunc loadLibrary,
+    CustomGetProcAddressFunc getProcAddress,
+    CustomFreeLibraryFunc freeLibrary,
+    void *userdata)
+{
+    DWORD dwSize = 0;
+    LPVOID lpData = ReadLibraryFile(lpszFileName, &dwSize);
+    HMEMORYMODULE hModule = NULL;
+
+    if (lpData) {
+        hModule = MemoryLoadLibraryEx(lpData, (size_t)dwSize, imageBase,
+            allocMemory, freeMemory, loadLibrary, getProcAddress, freeLibrary,
+            userdata);
+        HeapFree(GetProcessHeap(), 0, lpData);
+    }
+    return hModule;
+}
+
 #ifdef TESTSUITE
 #include <stdio.h>
 

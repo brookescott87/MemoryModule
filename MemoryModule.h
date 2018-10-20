@@ -161,6 +161,16 @@ FARPROC MemoryDefaultGetProcAddress(HCUSTOMMODULE, LPCSTR, void *);
  */
 void MemoryDefaultFreeLibrary(HCUSTOMMODULE, void *);
 
+HMEMORYMODULE MemoryLoadLibraryFile(LPCSTR, LPVOID);
+
+HMEMORYMODULE MemoryLoadLibraryFileEx(LPCSTR, LPVOID,
+    CustomAllocFunc,
+    CustomFreeFunc,
+    CustomLoadLibraryFunc,
+    CustomGetProcAddressFunc,
+    CustomFreeLibraryFunc,
+    void *);
+
 #ifdef __cplusplus
 }
 #endif
