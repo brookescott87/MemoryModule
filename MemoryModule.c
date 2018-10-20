@@ -536,12 +536,12 @@ void MemoryDefaultFreeLibrary(HCUSTOMMODULE module, void *userdata)
     FreeLibrary((HMODULE) module);
 }
 
-HMEMORYMODULE MemoryLoadLibrary(const void *data, size_t size)
+HMEMORYMODULE MemoryLoadLibrary(const void *data, size_t size, LPVOID imageBase)
 {
-    return MemoryLoadLibraryEx(data, size, MemoryDefaultAlloc, MemoryDefaultFree, MemoryDefaultLoadLibrary, MemoryDefaultGetProcAddress, MemoryDefaultFreeLibrary, NULL);
+    return MemoryLoadLibraryEx(data, size, imageBase, MemoryDefaultAlloc, MemoryDefaultFree, MemoryDefaultLoadLibrary, MemoryDefaultGetProcAddress, MemoryDefaultFreeLibrary, NULL);
 }
 
-HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size,
+HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size, LPVOID imageBase,
     CustomAllocFunc allocMemory,
     CustomFreeFunc freeMemory,
     CustomLoadLibraryFunc loadLibrary,
@@ -616,10 +616,13 @@ HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size,
         return NULL;
     }
 
+    if (!imageBase)
+        imageBase = (LPVOID)old_header->OptionalHeader.ImageBase;
+
     // reserve memory for image of library
     // XXX: is it correct to commit the complete memory region at once?
     //      calling DllEntry raises an exception if we don't...
-    code = (unsigned char *)allocMemory((LPVOID)(old_header->OptionalHeader.ImageBase),
+    code = (unsigned char *)allocMemory(imageBase,
         alignedImageSize,
         MEM_RESERVE | MEM_COMMIT,
         PAGE_READWRITE,
