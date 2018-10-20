@@ -77,7 +77,7 @@ typedef struct POINTER_LIST {
 } POINTER_LIST;
 #endif
 
-typedef struct {
+typedef struct MEMORYMODULE {
     PIMAGE_NT_HEADERS headers;
     unsigned char *codeBase;
     HCUSTOMMODULE *modules;
@@ -99,7 +99,7 @@ typedef struct {
 #endif
 } MEMORYMODULE, *PMEMORYMODULE;
 
-typedef struct {
+typedef struct SECTIONFINALIZEDATA {
     LPVOID address;
     LPVOID alignedAddress;
     SIZE_T size;
