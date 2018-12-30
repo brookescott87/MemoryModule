@@ -62,13 +62,11 @@
 
 #include "MemoryModule.h"
 
+
 struct ExportNameEntry {
     LPCSTR name;
     WORD idx;
 };
-
-typedef BOOL (WINAPI *DllEntryProc)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
-typedef int (WINAPI *ExeEntryProc)(void);
 
 #ifdef _WIN64
 typedef struct POINTER_LIST {
@@ -92,6 +90,7 @@ typedef struct MEMORYMODULE {
     CustomFreeLibraryFunc freeLibrary;
     struct ExportNameEntry *nameExportsTable;
     void *userdata;
+    DllEntryProc dllEntry;
     ExeEntryProc exeEntry;
     DWORD pageSize;
 #ifdef _WIN64
@@ -616,13 +615,11 @@ HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size, LPVOID imageBas
         return NULL;
     }
 
-    if (!imageBase)
-        imageBase = (LPVOID)old_header->OptionalHeader.ImageBase;
-
     // reserve memory for image of library
     // XXX: is it correct to commit the complete memory region at once?
     //      calling DllEntry raises an exception if we don't...
-    code = (unsigned char *)allocMemory(imageBase,
+    code = (unsigned char *)allocMemory(
+        imageBase ? imageBase : (LPVOID)old_header->OptionalHeader.ImageBase,
         alignedImageSize,
         MEM_RESERVE | MEM_COMMIT,
         PAGE_READWRITE,
@@ -742,12 +739,15 @@ HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size, LPVOID imageBas
     // get entry point of loaded library
     if (result->headers->OptionalHeader.AddressOfEntryPoint != 0) {
         if (result->isDLL) {
-            DllEntryProc DllEntry = (DllEntryProc)(LPVOID)(code + result->headers->OptionalHeader.AddressOfEntryPoint);
-            // notify library about attaching to process
-            BOOL successfull = (*DllEntry)((HINSTANCE)code, DLL_PROCESS_ATTACH, 0);
-            if (!successfull) {
-                SetLastError(ERROR_DLL_INIT_FAILED);
-                goto error;
+            result->dllEntry = (DllEntryProc)(LPVOID)(code + result->headers->OptionalHeader.AddressOfEntryPoint);
+            if (!imageBase)
+            {
+                // notify library about attaching to process
+                BOOL successful = result->dllEntry((HINSTANCE)code, DLL_PROCESS_ATTACH, 0);
+                if (!successful) {
+                    SetLastError(ERROR_DLL_INIT_FAILED);
+                    goto error;
+                }
             }
             result->initialized = TRUE;
         } else {
@@ -777,6 +777,18 @@ static int _find(const void *a, const void *b)
     LPCSTR *name = (LPCSTR *) a;
     const struct ExportNameEntry *p = (const struct ExportNameEntry*) b;
     return strcmp(*name, p->name);
+}
+
+LPVOID MemoryGetBaseAddress(HMEMORYMODULE mod)
+{
+    PMEMORYMODULE module = (PMEMORYMODULE)mod;
+    
+    return (LPVOID)module->codeBase;
+}
+
+DllEntryProc MemoryGetDllEntryProc(HMEMORYMODULE mod)
+{
+    return ((PMEMORYMODULE)mod)->dllEntry;
 }
 
 FARPROC MemoryGetProcAddress(HMEMORYMODULE mod, LPCSTR name)
@@ -1158,7 +1170,7 @@ static LPVOID ReadLibraryFile(LPCSTR lpszFileName, PDWORD pdwSize)
     if (hFile != INVALID_HANDLE_VALUE) {
         DWORD dwSize = GetFileSize(hFile, NULL);
         void *mem = dwSize ?
-            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MEMORYMODULE)) : NULL;
+            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwSize) : NULL;
         BOOL bResult = mem && ReadFile(hFile, mem, dwSize, &dwBytesRead, NULL);
         CloseHandle(hFile);
 

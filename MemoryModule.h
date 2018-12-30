@@ -44,6 +44,9 @@ typedef BOOL (*CustomFreeFunc)(LPVOID, SIZE_T, DWORD, void*);
 typedef HCUSTOMMODULE (*CustomLoadLibraryFunc)(LPCSTR, void *);
 typedef FARPROC (*CustomGetProcAddressFunc)(HCUSTOMMODULE, LPCSTR, void *);
 typedef void (*CustomFreeLibraryFunc)(HCUSTOMMODULE, void *);
+typedef BOOL(WINAPI *DllEntryProc)(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved);
+typedef int (WINAPI *ExeEntryProc)(void);
+
 
 /**
  * Load EXE/DLL from memory location with the given size.
@@ -66,6 +69,9 @@ HMEMORYMODULE MemoryLoadLibraryEx(const void *, size_t, LPVOID,
     CustomGetProcAddressFunc,
     CustomFreeLibraryFunc,
     void *);
+
+LPVOID MemoryGetBaseAddress(HMEMORYMODULE mod);
+DllEntryProc MemoryGetDllEntryProc(HMEMORYMODULE mod);
 
 /**
  * Get address of exported method. Supports loading both by name and by
